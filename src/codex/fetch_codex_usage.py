@@ -6,6 +6,10 @@ OpenAI プラットフォームの Usage ページからデータを取得する
 料金の取得方針:
 - 基本料金 (base): CODEX_MONTHLY_RATE × ユーザー数 で内部計算
 - オンデマンド料金 (ondemand): Usage ページから利用額を抽出
+
+NOTE: 現時点では Codex の利用料をサイトから確認することが不可能なため、
+デフォルトの実行対象から除外されている（src/main.py の DEFAULT_TARGETS を参照）。
+将来的に対応可能になった場合に備え、本モジュールのコードは維持する。
 """
 
 import asyncio

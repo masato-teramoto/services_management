@@ -13,7 +13,9 @@
 
 const CONFIG = {
   // raw シート名
-  RAW_SHEETS: ["raw_cursor", "raw_codex", "raw_claude_code"],
+  // NOTE: Codex は利用料をサイトから確認することが不可能なため、現時点では対象外。
+  //       将来的に対応可能になった場合は "raw_codex" を追加する。
+  RAW_SHEETS: ["raw_cursor", "raw_claude_code"],
 
   // 料金データシート名
   RAW_PRICING_SHEET: "raw_pricing",
@@ -226,7 +228,9 @@ function writePricingSummary_(ss, pricingByMonth) {
   const now = new Date().toISOString();
 
   // サービスの表示順序
-  const serviceOrder = ["cursor", "codex", "claude_code"];
+  // NOTE: Codex は利用料をサイトから確認することが不可能なため、現時点では対象外。
+  //       将来的に対応可能になった場合は "codex" を追加する。
+  const serviceOrder = ["cursor", "claude_code"];
 
   // 計上月でソート
   const months = Object.keys(pricingByMonth).sort();

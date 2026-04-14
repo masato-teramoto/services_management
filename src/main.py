@@ -47,6 +47,11 @@ SERVICE_FETCHERS = {
     "claude_code": fetch_claude_code,
 }
 
+# Codex は利用料をサイトから確認することが不可能なため、現時点ではデフォルト対象外とする。
+# 将来的に対応可能になった場合は DEFAULT_TARGETS へ追加する。
+# 明示的に --targets codex を指定すれば個別実行は可能。
+DEFAULT_TARGETS = ["cursor", "claude_code"]
+
 
 def main(targets: list[str] | None = None, skip_sheets: bool = False) -> None:
     """メイン処理。
@@ -61,7 +66,7 @@ def main(targets: list[str] | None = None, skip_sheets: bool = False) -> None:
     logger.info("========================================")
 
     if targets is None:
-        targets = list(SERVICE_FETCHERS.keys())
+        targets = list(DEFAULT_TARGETS)
 
     all_usage_records: list[UsageRecord] = []
     all_pricing_records: list[PricingRecord] = []
