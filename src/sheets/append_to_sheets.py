@@ -11,7 +11,14 @@ from google.oauth2.service_account import Credentials
 
 from src.common.config import GOOGLE_SERVICE_ACCOUNT_FILE, GOOGLE_SHEETS_SPREADSHEET_ID, PROJECT_ROOT
 from src.common.logger import get_logger
-from src.common.utils import RAW_SHEET_HEADERS, UsageRecord, load_records_from_json
+from src.common.utils import (
+    PRICING_SHEET_HEADERS,
+    RAW_SHEET_HEADERS,
+    PricingRecord,
+    UsageRecord,
+    load_pricing_records_from_json,
+    load_records_from_json,
+)
 
 logger = get_logger(__name__)
 
@@ -20,12 +27,15 @@ SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
 ]
 
-# サービス名 → シート名のマッピング
+# サービス名 → raw シート名のマッピング
 SHEET_NAME_MAP = {
     "cursor": "raw_cursor",
     "codex": "raw_codex",
     "claude_code": "raw_claude_code",
 }
+
+# 料金データシート名
+PRICING_SHEET_NAME = "raw_pricing"
 
 
 def _get_client() -> gspread.Client:
@@ -96,6 +106,46 @@ def append_records(records: list[UsageRecord]) -> int:
         logger.info("シート '%s' へ %d 件追記完了", sheet_name, len(rows))
 
     return total_appended
+
+
+def append_pricing_records(records: list[PricingRecord]) -> int:
+    """PricingRecord のリストを raw_pricing シートへ追記する。
+
+    Returns:
+        追記した行数
+    """
+    if not records:
+        logger.warning("追記する料金レコードがありません")
+        return 0
+
+    if not GOOGLE_SHEETS_SPREADSHEET_ID:
+        raise ValueError("GOOGLE_SHEETS_SPREADSHEET_ID が設定されていません")
+
+    client = _get_client()
+    spreadsheet = client.open_by_key(GOOGLE_SHEETS_SPREADSHEET_ID)
+
+    sheet_name = PRICING_SHEET_NAME
+    logger.info("シート '%s' へ %d 件追記開始", sheet_name, len(records))
+
+    try:
+        worksheet = spreadsheet.worksheet(sheet_name)
+    except gspread.WorksheetNotFound:
+        logger.info("シート '%s' が見つかりません。新規作成します。", sheet_name)
+        worksheet = spreadsheet.add_worksheet(
+            title=sheet_name, rows=1000, cols=len(PRICING_SHEET_HEADERS)
+        )
+
+    # ヘッダー確認
+    existing = worksheet.row_values(1)
+    if not existing:
+        worksheet.append_row(PRICING_SHEET_HEADERS, value_input_option="RAW")
+        logger.info("ヘッダー行を追加しました: %s", sheet_name)
+
+    # バッチ追記
+    rows = [r.to_row() for r in records]
+    worksheet.append_rows(rows, value_input_option="RAW")
+    logger.info("シート '%s' へ %d 件追記完了", sheet_name, len(rows))
+    return len(rows)
 
 
 def append_from_json(filepath: str | Path) -> int:

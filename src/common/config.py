@@ -24,11 +24,14 @@ def _get_bool(key: str, default: bool = False) -> bool:
 # --- Cursor API ---
 CURSOR_API_KEY = _get("CURSOR_API_KEY")
 CURSOR_API_BASE_URL = _get("CURSOR_API_BASE_URL", "https://www.cursor.com/api")
+CURSOR_MONTHLY_RATE = float(_get("CURSOR_MONTHLY_RATE", "0"))  # 1ユーザーあたりの月額 USD 単価
+CURSOR_BILLING_CYCLE_START_DAY = int(_get("CURSOR_BILLING_CYCLE_START_DAY", "26"))  # 請求サイクル開始日
 
 # --- Codex ---
 CODEX_LOGIN_EMAIL = _get("CODEX_LOGIN_EMAIL")
 CODEX_LOGIN_PASSWORD = _get("CODEX_LOGIN_PASSWORD")
 CODEX_DASHBOARD_URL = _get("CODEX_DASHBOARD_URL", "https://platform.openai.com/usage")
+CODEX_MONTHLY_RATE = float(_get("CODEX_MONTHLY_RATE", "0"))  # 1ユーザーあたりの月額 USD 単価
 
 # --- Claude Code ---
 CLAUDE_LOGIN_EMAIL = _get("CLAUDE_LOGIN_EMAIL")
@@ -36,6 +39,7 @@ CLAUDE_LOGIN_PASSWORD = _get("CLAUDE_LOGIN_PASSWORD")
 CLAUDE_DASHBOARD_URL = _get(
     "CLAUDE_DASHBOARD_URL", "https://console.anthropic.com/settings/usage"
 )
+CLAUDE_MONTHLY_RATE = float(_get("CLAUDE_MONTHLY_RATE", "0"))  # 1ユーザーあたりの月額 USD 単価
 
 # --- Google Sheets ---
 GOOGLE_SHEETS_SPREADSHEET_ID = _get("GOOGLE_SHEETS_SPREADSHEET_ID")
