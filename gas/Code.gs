@@ -2,8 +2,9 @@
  * AIサービス利用状況管理 - GAS 集計・整形・通知スクリプト
  *
  * このスクリプトは Google Sheets にデプロイして使用する。
- * raw_cursor / raw_codex / raw_claude_code シートから集計を行い、
- * summary シートへ反映し、必要に応じて通知を送信する。
+ * raw_cursor / raw_codex / raw_claude_code シートから利用状況の集計を行い、
+ * raw_pricing シートから料金集計を行い、
+ * 各集計シートへ反映し、必要に応じて通知を送信する。
  */
 
 // ============================================
@@ -14,10 +15,16 @@ const CONFIG = {
   // raw シート名
   RAW_SHEETS: ["raw_cursor", "raw_codex", "raw_claude_code"],
 
+  // 料金データシート名
+  RAW_PRICING_SHEET: "raw_pricing",
+
   // 集計結果シート名
   SUMMARY_SHEET: "summary",
   SUMMARY_BY_USER_SHEET: "summary_by_user",
   SUMMARY_BY_SERVICE_SHEET: "summary_by_service",
+
+  // 料金集計シート名
+  PRICING_SUMMARY_SHEET: "pricing_summary",
 
   // 通知先 (メールアドレス)
   NOTIFICATION_EMAIL: "",  // 設定してください
@@ -38,6 +45,26 @@ const CONFIG = {
     SOURCE_TYPE: 8,
     RAW_PAYLOAD: 9,
     BATCH_ID: 10,
+  },
+
+  // raw_pricing シートのカラムインデックス (0始まり)
+  PRICING_COL: {
+    FETCHED_AT: 0,
+    SERVICE_NAME: 1,
+    ACCOUNTING_MONTH: 2,
+    USER_EMAIL: 3,
+    USER_NAME: 4,
+    CHARGE_TYPE: 5,
+    AMOUNT_USD: 6,
+    DESCRIPTION: 7,
+    BATCH_ID: 8,
+  },
+
+  // サービス名の表示用マッピング
+  SERVICE_DISPLAY_NAMES: {
+    "cursor": "Cursor",
+    "codex": "Codex",
+    "claude_code": "Claude Code",
   },
 };
 
@@ -91,12 +118,167 @@ function runAggregation() {
   writeSummaryByUser_(ss, byUser);
   writeDailySummary_(ss, dailySummary);
 
+  // 料金集計
+  runPricingAggregation();
+
   Logger.log("集計処理が完了しました。");
 }
 
 
 // ============================================
-// 集計ロジック
+// 料金集計処理
+// ============================================
+
+/**
+ * raw_pricing シートからデータを読み込み、サービス別の料金集計を行う。
+ * 各サービスの基本料金・オンデマンド料金・合計料金を算出して
+ * pricing_summary シートへ出力する。
+ */
+function runPricingAggregation() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(CONFIG.RAW_PRICING_SHEET);
+
+  if (!sheet) {
+    Logger.log(`シート '${CONFIG.RAW_PRICING_SHEET}' が見つかりません。料金集計をスキップします。`);
+    return;
+  }
+
+  const data = sheet.getDataRange().getValues();
+  if (data.length <= 1) {
+    Logger.log("料金データがありません。");
+    return;
+  }
+
+  // ヘッダー行をスキップして料金レコードを読み込み
+  const pricingRecords = [];
+  for (let i = 1; i < data.length; i++) {
+    pricingRecords.push(data[i]);
+  }
+
+  Logger.log(`料金データ: ${pricingRecords.length} 件を読み込みました。`);
+
+  // 計上月別 × サービス別に集計
+  const pricingByMonth = aggregatePricingByMonth_(pricingRecords);
+
+  // 料金集計シートへ出力
+  writePricingSummary_(ss, pricingByMonth);
+
+  Logger.log("料金集計が完了しました。");
+}
+
+/**
+ * 料金レコードを計上月別 × サービス別に集計する。
+ *
+ * 結果の構造:
+ * {
+ *   "YYYY-MM": {
+ *     "cursor": { base: X, ondemand: Y },
+ *     "codex": { base: X, ondemand: Y },
+ *     "claude_code": { base: X, ondemand: Y },
+ *   }
+ * }
+ */
+function aggregatePricingByMonth_(records) {
+  const result = {};
+
+  for (const row of records) {
+    const accountingMonth = String(row[CONFIG.PRICING_COL.ACCOUNTING_MONTH]);
+    const serviceName = String(row[CONFIG.PRICING_COL.SERVICE_NAME]);
+    const chargeType = String(row[CONFIG.PRICING_COL.CHARGE_TYPE]);
+    const amountUsd = Number(row[CONFIG.PRICING_COL.AMOUNT_USD]) || 0;
+
+    if (!result[accountingMonth]) {
+      result[accountingMonth] = {};
+    }
+    if (!result[accountingMonth][serviceName]) {
+      result[accountingMonth][serviceName] = { base: 0, ondemand: 0 };
+    }
+
+    if (chargeType === "base") {
+      result[accountingMonth][serviceName].base += amountUsd;
+    } else if (chargeType === "ondemand") {
+      result[accountingMonth][serviceName].ondemand += amountUsd;
+    }
+  }
+
+  return result;
+}
+
+/**
+ * 料金集計結果を pricing_summary シートへ出力する。
+ *
+ * シートの構成:
+ * | 計上月 | サービス名 | 基本料金(USD) | オンデマンド料金(USD) | 合計料金(USD) | 集計日時 |
+ */
+function writePricingSummary_(ss, pricingByMonth) {
+  const sheet = getOrCreateSheet_(ss, CONFIG.PRICING_SUMMARY_SHEET);
+  sheet.clear();
+
+  const headers = [
+    "計上月",
+    "サービス名",
+    "基本料金(USD)",
+    "オンデマンド料金(USD)",
+    "合計料金(USD)",
+    "集計日時",
+  ];
+  const rows = [headers];
+  const now = new Date().toISOString();
+
+  // サービスの表示順序
+  const serviceOrder = ["cursor", "codex", "claude_code"];
+
+  // 計上月でソート
+  const months = Object.keys(pricingByMonth).sort();
+
+  for (const month of months) {
+    const monthData = pricingByMonth[month];
+
+    for (const serviceName of serviceOrder) {
+      const data = monthData[serviceName] || { base: 0, ondemand: 0 };
+      const baseUsd = roundToTwoDecimals_(data.base);
+      const ondemandUsd = roundToTwoDecimals_(data.ondemand);
+      const totalUsd = roundToTwoDecimals_(baseUsd + ondemandUsd);
+      const displayName = CONFIG.SERVICE_DISPLAY_NAMES[serviceName] || serviceName;
+
+      rows.push([month, displayName, baseUsd, ondemandUsd, totalUsd, now]);
+    }
+
+    // 月ごとの合計行
+    let monthBaseTotal = 0;
+    let monthOndemandTotal = 0;
+    for (const svc of serviceOrder) {
+      const d = monthData[svc] || { base: 0, ondemand: 0 };
+      monthBaseTotal += d.base;
+      monthOndemandTotal += d.ondemand;
+    }
+    rows.push([
+      month,
+      "【合計】",
+      roundToTwoDecimals_(monthBaseTotal),
+      roundToTwoDecimals_(monthOndemandTotal),
+      roundToTwoDecimals_(monthBaseTotal + monthOndemandTotal),
+      now,
+    ]);
+  }
+
+  if (rows.length > 1) {
+    sheet.getRange(1, 1, rows.length, headers.length).setValues(rows);
+  }
+
+  Logger.log(`${CONFIG.PRICING_SUMMARY_SHEET}: ${rows.length - 1} 件出力`);
+}
+
+/**
+ * 小数点以下2桁に丸める。
+ */
+function roundToTwoDecimals_(value) {
+  return Math.round(value * 100) / 100;
+}
+
+
+// ============================================
+// 利用状況集計ロジック
 // ============================================
 
 /**
@@ -293,6 +475,19 @@ function sendDailySummaryNotification() {
     body += `  ${service}: レコード数=${recordCount}, ユーザー数=${uniqueUsers}\n`;
   }
 
+  // 料金集計情報を追加
+  const pricingSheet = ss.getSheetByName(CONFIG.PRICING_SUMMARY_SHEET);
+  if (pricingSheet) {
+    const pricingData = pricingSheet.getDataRange().getValues();
+    if (pricingData.length > 1) {
+      body += "\n■ 料金集計\n";
+      for (let i = 1; i < pricingData.length; i++) {
+        const [month, service, baseUsd, ondemandUsd, totalUsd] = pricingData[i];
+        body += `  ${month} ${service}: 基本=$${baseUsd}, オンデマンド=$${ondemandUsd}, 合計=$${totalUsd}\n`;
+      }
+    }
+  }
+
   body += `\nスプレッドシート: ${ss.getUrl()}\n`;
 
   // メール送信
@@ -336,6 +531,7 @@ function checkDataAnomalies() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const alerts = [];
 
+  // raw シートのチェック
   for (const sheetName of CONFIG.RAW_SHEETS) {
     const sheet = ss.getSheetByName(sheetName);
     if (!sheet) {
@@ -359,6 +555,17 @@ function checkDataAnomalies() {
       if (hoursDiff > 48) {
         alerts.push(`${sheetName}: 最終取得から ${Math.round(hoursDiff)} 時間経過`);
       }
+    }
+  }
+
+  // 料金シートのチェック
+  const pricingSheet = ss.getSheetByName(CONFIG.RAW_PRICING_SHEET);
+  if (!pricingSheet) {
+    alerts.push(`${CONFIG.RAW_PRICING_SHEET}: シートが見つかりません`);
+  } else {
+    const lastRow = pricingSheet.getLastRow();
+    if (lastRow <= 1) {
+      alerts.push(`${CONFIG.RAW_PRICING_SHEET}: データが空です`);
     }
   }
 
