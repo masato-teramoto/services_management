@@ -1,0 +1,14 @@
+# AIサービス利用状況管理 - Python依存パッケージ
+
+# API リクエスト
+requests>=2.31.0
+
+# Google Sheets 連携
+gspread>=6.0.0
+google-auth>=2.25.0
+
+# Playwright (ブラウザ自動操作)
+playwright>=1.40.0
+
+# 環境変数管理
+python-dotenv>=1.0.0
