@@ -1,3 +1,25 @@
 /Claudeレビュー比較まとめ_Confluence用.md
 /テト切り抜き.png
 /開発フロー図2.pptx
+
+# 環境変数・秘密情報
+.env
+credentials/
+playwright_state/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# ログ・出力・スクリーンショット
+logs/*.log
+screenshots/*.png
+output/*.json
+output/*.csv
+
+# OS
+.DS_Store
+Thumbs.db
